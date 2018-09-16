@@ -20,7 +20,7 @@ setuptools.setup(
     ],
     entry_points={
         'console_scripts': [
-            'scriptr = snek_hat.__main__:main'
+            'snek_hat = snek_hat.__main__:main'
         ]
     }
 )

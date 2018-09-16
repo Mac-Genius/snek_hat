@@ -49,6 +49,14 @@ class Color(Position):
         self.g = 0
         self.b = 0
 
+    def copy(self):
+        temp = Color()
+        temp.r = self.r
+        temp.g = self.g
+        temp.b = self.b
+        temp.x = self.x
+        temp.y = self.y
+        return temp
 
 class SnekNode(Color):
     """A snek node.
@@ -65,7 +73,7 @@ class SnekNode(Color):
 class AppleNode(Color):
     def __init__(self):
         super().__init__()
-        self.r = 100
+        self.r = 255
 
 
 class SnekBoard():
@@ -76,7 +84,11 @@ class SnekBoard():
         self.next_direction = -1
         self.running = False
         self.sense = SenseHat()
+        self.sense.low_light = True
         self.tick_rate = 4
+        self.input_thread = None
+        self.add_draw = []
+        self.remove_draw = []
 
     def gen_apple(self):
         x = random.randint(0, 7)
@@ -96,6 +108,7 @@ class SnekBoard():
         self.apple = AppleNode()
         self.apple.x = x
         self.apple.y = y
+        self.add_draw.append(self.apple.copy())
 
     def _is_coord_in_snek(self, x, y):
         for node in self.snek:
@@ -136,8 +149,9 @@ class SnekBoard():
         next_x, next_y = self._next_pos(next_direction, self.snek[0])
         if not self._is_valid_move(next_x, next_y):
             return False
-
         for index, node in reversed(list(enumerate(self.snek))):
+            if index == len(self.snek) - 1:
+                self.remove_draw.append(node.copy())
             if index > 0:
                 node.x = self.snek[index - 1].x
                 node.y = self.snek[index - 1].y
@@ -146,6 +160,7 @@ class SnekBoard():
                 node.x = next_x
                 node.y = next_y
                 node.direction = next_direction
+                self.add_draw.append(node.copy())
 
         return True
 
@@ -168,9 +183,10 @@ class SnekBoard():
 
     def init_snek(self):
         snek_head = SnekNode()
-        snek_head.g = 100
+        snek_head.g = 255
         snek_head.direction = 1
         self.snek.append(snek_head)
+        self.add_draw.append(snek_head.copy())
 
     def add_snek_node(self):
         next_direction = (self.snek[-1].direction + 2) % 4
@@ -180,38 +196,41 @@ class SnekBoard():
             new_node.x = next_x
             new_node.y = next_y
             new_node.direction = (next_direction + 2) % 4
-            new_node.g = 100
+            new_node.g = 255
             self.snek.append(new_node)
+            self.add_draw.append(new_node.copy())
+            self.remove_draw.pop()
 
     def draw(self):
-        self.sense.clear()
-        for node in self.snek:
+        while self.add_draw:
+            node = self.add_draw.pop()
             self.sense.set_pixel(node.x, node.y, (node.r, node.g, node.b))
-        self.sense.set_pixel(self.apple.x, self.apple.y,
-                             (self.apple.r, self.apple.b, self.apple.g))
+        while self.remove_draw:
+            node = self.remove_draw.pop()
+            self.sense.set_pixel(node.x, node.y, (0, 0, 0))
 
     def win(self):
-        self.sense.clear()
-        self.sense.show_message('You win!', text_colour=[100, 100, 100])
         self.running = False
+        self.sense.clear()
+        self.sense.show_message('You win!', text_colour=[255, 255, 255])
 
     def lose(self):
-        self.sense.clear()
-        self.sense.show_message('You lose!', text_colour=[100, 100, 100])
         self.running = False
+        self.sense.clear()
+        self.sense.show_message('You lose!', text_colour=[255, 255, 255])
 
     def tick(self):
         if self.move_snek():
             if self.ate_apple():
                 self.add_snek_node()
-                self.gen_apple()
-            if len(self.snek) == 64:
-                self.win()
-                return False
-            else:
-                self.next_direction = -1
-                self.draw()
-                return True
+                if len(self.snek) == 64:
+                    self.win()
+                    return False
+                else:
+                    self.gen_apple()
+            self.next_direction = -1
+            self.draw()
+            return True
         else:
             self.lose()
             return False
@@ -223,9 +242,9 @@ class SnekBoard():
         self.gen_apple()
         self.draw()
         self.running = True
-        input_thread = Thread(target=self.read_input)
-        input_thread.daemon = True
-        input_thread.start()
+        self.input_thread = Thread(target=self.read_input)
+        self.input_thread.daemon = True
+        self.input_thread.start()
 
     def easy(self):
         self.tick_rate = 4
@@ -239,14 +258,14 @@ class SnekBoard():
     def countdown(self):
         countdown = 3
         for index in reversed(range(countdown)):
-            for num in reversed([temp for temp in range(100)]):
-                self.sense.show_letter(
-                    str(index + 1), text_colour=[num, num, num])
-                sleep(1/100)
+            self.sense.show_letter(
+                str(index + 1), text_colour=[255, 255, 255])
+            sleep(.75)
+        self.sense.clear()
 
     def run(self):
-        self.init_board()
         self.countdown()
+        self.init_board()
         update = False
         with GracefulInterruptHandler() as interrupt:
             try:
@@ -261,3 +280,4 @@ class SnekBoard():
                 pass
             self.running = False
             self.sense.clear()
+            self.input_thread.join()
